@@ -165,7 +165,18 @@ td{padding:10px 12px;border-bottom:0.5px solid var(--border)}
           <div class="form-group"><label>Quantity available</label><input id="ap-qty" type="number" placeholder="0"/></div>
           <div class="form-group"><label>Discount (%)</label><input id="ap-disc" type="number" placeholder="0" min="0" max="100"/></div>
         </div>
-        <div class="form-group"><label>Product image URL (optional)</label><input id="ap-img" placeholder="https://..."/></div>
+        <div class="form-group">
+          <label>Product image</label>
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+            <div id="ap-img-preview" style="width:80px;height:80px;border-radius:var(--radius);border:0.5px solid var(--border-gold);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);text-align:center;overflow:hidden;flex-shrink:0">No image</div>
+            <div style="flex:1">
+              <input type="file" id="ap-img-file" accept="image/*" style="display:none" onchange="previewProductImg(this,'ap-img-preview','ap-img-data')"/>
+              <button class="btn-outline" style="padding:7px 14px;font-size:13px;width:100%" onclick="document.getElementById('ap-img-file').click()">📷 Upload image</button>
+              <div style="font-size:11px;color:var(--text3);margin-top:5px">PNG, JPG or WEBP — image is stored with the product</div>
+            </div>
+          </div>
+          <input type="hidden" id="ap-img-data"/>
+        </div>
         <div id="ap-err" class="err"></div>
         <button class="btn-gold" style="margin-top:.5rem" onclick="addProduct()">Add product</button>
       </div>
@@ -300,7 +311,17 @@ td{padding:10px 12px;border-bottom:0.5px solid var(--border)}
       <div class="form-group"><label>Quantity</label><input id="ep-qty" type="number"/></div>
       <div class="form-group"><label>Discount (%)</label><input id="ep-disc" type="number" min="0" max="100"/></div>
     </div>
-    <div class="form-group"><label>Image URL</label><input id="ep-img"/></div>
+            <div class="form-group">
+          <label>Product image</label>
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+            <div id="ep-img-preview" style="width:80px;height:80px;border-radius:var(--radius);border:0.5px solid var(--border-gold);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3);text-align:center;overflow:hidden;flex-shrink:0">No image</div>
+            <div style="flex:1">
+              <input type="file" id="ep-img-file" accept="image/*" style="display:none" onchange="previewProductImg(this,'ep-img-preview','ep-img-data')"/>
+              <button class="btn-outline" style="padding:7px 14px;font-size:13px;width:100%" onclick="document.getElementById('ep-img-file').click()">📷 Change image</button>
+            </div>
+          </div>
+          <input type="hidden" id="ep-img-data"/>
+        </div>
     <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn-gold" onclick="saveEdit()">Save changes</button>
       <button class="btn-outline" onclick="closeModal('modal-edit')">Cancel</button>
@@ -341,6 +362,18 @@ function updateLogos(){
   if(al)al.innerHTML=src?`<img src="${src}" style="height:56px;width:auto;object-fit:contain;margin-bottom:8px"/>`:'';
 }
 
+function previewProductImg(input, previewId, dataId){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const src=e.target.result;
+    const prev=document.getElementById(previewId);
+    prev.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover"/>`;
+    document.getElementById(dataId).value=src;
+  };
+  reader.readAsDataURL(file);
+}
+
 function previewLogo(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
@@ -368,7 +401,7 @@ function doLogin(){
   if(!u||u.pass!==p){err.textContent='Invalid name or password';return}
   state.currentUser=u.name;state.isAdmin=false;state.cart=[];save();
   document.getElementById('shop-greeting').textContent='Hi, '+u.name;
-  updateLogos();renderShop();showPage('shop');
+  updateLogos();renderShop();showPage('shop');checkProductLink();
 }
 
 function doAdminLogin(){document.getElementById('modal-admin-login').style.display='flex';document.getElementById('al-err').textContent=''}
@@ -397,9 +430,12 @@ function filterShop(cat,btn){
   const prods=cat==='All'?state.products:state.products.filter(p=>p.category===cat);
   const g=document.getElementById('shop-grid');
   if(!prods.length){g.innerHTML='<p style="color:var(--text3);grid-column:1/-1">No products available yet.</p>';return}
+  // Set filter to show all so linked product is always visible
+  const hash=location.hash.replace('#','');
+  if(hash&&prods.find(p=>p.id===hash)&&cat==='All'){}
   g.innerHTML=prods.map(p=>{
     const fp=calcPrice(p).toFixed(2);const sold=p.qty<=0||p.soldOut;
-    return`<div class="product-card">
+    return`<div class="product-card" id="product-${p.id}">
       <div class="product-img">${p.img?`<img src="${p.img}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">`:''}
         <span style="position:absolute;font-size:48px">${EMOJIS[p.category]||'🎁'}</span>
         ${p.discount>0&&!sold?`<span class="badge badge-discount" style="position:absolute;top:8px;right:8px">-${p.discount}%</span>`:''}
@@ -521,7 +557,35 @@ function placeOrder(){
   state.cart=[];updateCartCount();
 }
 
-function continueShopping(){closeModal('modal-confirm');renderShop()}
+function continueShopping(){closeModal('modal-confirm');renderShop();checkProductLink();}
+
+function copyProductLink(id){
+  const url=`${location.origin}${location.pathname}#${id}`;
+  navigator.clipboard.writeText(url).then(()=>{
+    const btn=event.target;const orig=btn.textContent;
+    btn.textContent='✅ Copied!';btn.style.color='#80f0a0';
+    setTimeout(()=>{btn.textContent=orig;btn.style.color='';},2000);
+  }).catch(()=>{
+    prompt('Copy this product link:',`${location.origin}${location.pathname}#${id}`);
+  });
+}
+
+function checkProductLink(){
+  const hash=location.hash.replace('#','');
+  if(!hash)return;
+  const p=state.products.find(x=>x.id===hash);
+  if(!p)return;
+  // Make sure we're on the shop page and filter is showing the product
+  setTimeout(()=>{
+    const el=document.getElementById('product-'+hash);
+    if(el){
+      el.scrollIntoView({behavior:'smooth',block:'center'});
+      el.style.transition='box-shadow 0.3s';
+      el.style.boxShadow='0 0 0 3px var(--gold)';
+      setTimeout(()=>{el.style.boxShadow='';},3000);
+    }
+  },400);
+}
 
 function renderAdmin(){
   const s=state.settings;
@@ -554,6 +618,7 @@ function renderAdmin(){
     <td><button class="badge ${p.soldOut||p.qty<=0?'badge-sold':'badge-discount'}" onclick="toggleSold('${p.id}')" style="cursor:pointer;border:none">${p.soldOut||p.qty<=0?'Sold out':'Active'}</button></td>
     <td style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn-outline" style="padding:4px 10px;font-size:12px" onclick="openEdit('${p.id}')">Edit</button>
+      <button class="btn-outline" style="padding:4px 10px;font-size:12px;color:var(--text2)" onclick="copyProductLink('${p.id}')">🔗 Copy link</button>
       <button class="btn-danger" style="padding:4px 10px;font-size:12px" onclick="deleteProduct('${p.id}')">Delete</button>
     </td>
   </tr>`).join('');
@@ -608,10 +673,12 @@ function addProduct(){
   const n=document.getElementById('ap-name').value.trim(),cat=document.getElementById('ap-cat').value,price=parseFloat(document.getElementById('ap-price').value),qty=parseInt(document.getElementById('ap-qty').value)||0,disc=parseInt(document.getElementById('ap-disc').value)||0,img=document.getElementById('ap-img').value.trim(),err=document.getElementById('ap-err');
   if(!n){err.textContent='Product name required';return}
   if(isNaN(price)||price<=0){err.textContent='Valid price required';return}
+  const img=document.getElementById('ap-img-data').value||'';
   let id=genId();while(state.products.find(p=>p.id===id))id=genId();
   state.products.push({id,name:n,category:cat,price,qty,discount:disc,img,soldOut:qty<=0});
   save();err.style.color='#80f0a0';err.textContent='Product added!';
-  ['ap-name','ap-price','ap-qty','ap-disc','ap-img'].forEach(x=>document.getElementById(x).value='');
+  ['ap-name','ap-price','ap-qty','ap-disc','ap-img-data'].forEach(x=>document.getElementById(x).value='');
+  document.getElementById('ap-img-preview').innerHTML='No image';
   setTimeout(()=>{err.textContent='';adminTab('products');renderAdmin()},800);
 }
 
@@ -622,14 +689,18 @@ function openEdit(id){
   const p=state.products.find(x=>x.id===id);if(!p)return;state.editId=id;
   document.getElementById('ep-name').value=p.name;document.getElementById('ep-cat').value=p.category;
   document.getElementById('ep-price').value=p.price;document.getElementById('ep-qty').value=p.qty;
-  document.getElementById('ep-disc').value=p.discount||0;document.getElementById('ep-img').value=p.img||'';
+  document.getElementById('ep-disc').value=p.discount||0;document.getElementById('ep-img-data').value='';
+  const epPrev=document.getElementById('ep-img-preview');
+  epPrev.innerHTML=p.img?`<img src="${p.img}" style="width:100%;height:100%;object-fit:cover"/>`:'No image';
   document.getElementById('modal-edit').style.display='flex';
 }
 function saveEdit(){
   const p=state.products.find(x=>x.id===state.editId);if(!p)return;
   p.name=document.getElementById('ep-name').value.trim();p.category=document.getElementById('ep-cat').value;
   p.price=parseFloat(document.getElementById('ep-price').value)||p.price;p.qty=parseInt(document.getElementById('ep-qty').value)||0;
-  p.discount=parseInt(document.getElementById('ep-disc').value)||0;p.img=document.getElementById('ep-img').value.trim();
+  p.discount=parseInt(document.getElementById('ep-disc').value)||0;
+  const newImg=document.getElementById('ep-img-data').value;
+  if(newImg)p.img=newImg;
   p.soldOut=p.qty<=0;save();closeModal('modal-edit');renderAdmin();
 }
 
